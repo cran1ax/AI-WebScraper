@@ -17,6 +17,7 @@ Automatically scrapes upcoming marathon & running events near **Navi Mumbai, Mah
 - **Duplicate Detection** — Queries your calendar before adding; never creates duplicates
 - **Batch Processing** — Scrapes & adds all upcoming events in one run
 - **REST API** — FastAPI endpoint (`POST /sync-marathons`) with interactive Swagger docs
+- **Web Frontend** — Tailwind CSS dashboard at `/ui` with one-click sync, live status, and event cards
 - **CLI Flags** — `--dry-run`, `--fast`, `--headed` for flexible usage
 
 ## 📁 Project Structure
@@ -27,6 +28,8 @@ AI WebScraper/
 ├── main.py                    # CLI pipeline: scrape → deduplicate → add → summary
 ├── marathon_scraper.py        # Playwright scraper for IndiaRunning.com
 ├── calendar_integration.py    # Google Calendar API v3 authentication & event creation
+├── static/
+│   └── index.html             # Web frontend (Tailwind CSS + vanilla JS)
 ├── GOOGLE_CALENDAR_SETUP.md   # Step-by-step guide to get credentials.json
 ├── requirements.txt           # Python dependencies
 ├── .gitignore                 # Protects credentials.json & token.json
@@ -225,6 +228,42 @@ Both files are listed in `.gitignore`. If you accidentally expose them:
 2. Delete the compromised OAuth client
 3. Create a new one and download fresh `credentials.json`
 
-## 📄 License
+## �️ Web Frontend
+
+The project includes a modern single-page dashboard served directly by FastAPI.
+
+### Launch
+
+```bash
+uvicorn app:app --reload --port 8000
+```
+
+Then open **http://localhost:8000/ui** in your browser.
+
+### What you get
+
+| Feature | Details |
+|---------|---------|
+| **One-click sync** | Big "Sync Marathons" button triggers the full pipeline |
+| **Options** | Toggle **Fast mode** and **Dry run**, set a custom Calendar ID |
+| **Live status** | Loading spinner + status text while the scraper runs |
+| **Summary cards** | At-a-glance counts: Scraped / Added / Duplicates / Errors |
+| **Event list** | Each event shows name, date, time, location, and colour-coded status badges |
+| **Quick links** | Direct links to registration pages and created Google Calendar events |
+
+### Tech stack
+
+- **Tailwind CSS** (CDN) — utility-first styling, dark gradient theme
+- **Vanilla JavaScript** — zero dependencies, single `fetch()` call to the API
+- **FastAPI static mount** — `static/index.html` served at `/ui`, no extra server needed
+
+### Screenshot flow
+
+1. Open `http://localhost:8000/ui`
+2. Toggle options → click **🔄 Sync Marathons**
+3. Wait 30–90 seconds while the scraper runs
+4. View the summary cards and scroll through the event list
+
+## �📄 License
 
 MIT
