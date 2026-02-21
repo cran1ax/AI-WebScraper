@@ -24,6 +24,9 @@ from enum import Enum
 from typing import Any, Optional
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from googleapiclient.errors import HttpError
 
@@ -102,6 +105,31 @@ app = FastAPI(
     ),
     version="1.0.0",
 )
+
+# -- CORS (allow browser fetch from any localhost port) ----------------------
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# -- Serve the frontend at /ui -----------------------------------------------
+import pathlib as _pathlib
+
+_STATIC_DIR = _pathlib.Path(__file__).resolve().parent / "static"
+if _STATIC_DIR.is_dir():
+    app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+
+
+@app.get("/ui", include_in_schema=False)
+async def serve_frontend():
+    """Serve the single-page frontend."""
+    index = _STATIC_DIR / "index.html"
+    if index.exists():
+        return FileResponse(str(index))
+    return {"error": "Frontend not found. Place index.html in static/ folder."}
 
 
 @app.get("/", tags=["Health"])

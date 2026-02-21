@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🏃 Marathon Scraper</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* custom spinner */
+    .spinner {
+      border: 4px solid rgba(255, 255, 255, 0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      width: 1.25rem;
+      height: 1.25rem;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    /* fade-in for results */
+    .fade-in { animation: fadeIn 0.4s ease-out; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
+</head>
+
+<body class="min-h-full bg-gradient-to-br from-slate-900 via-purple-950 to-slate-900 text-white">
+
+  <!-- ===== HEADER ===== -->
+  <header class="text-center pt-12 pb-6 px-4">
+    <h1 class="text-4xl md:text-5xl font-extrabold tracking-tight">
+      🏃 Marathon Scraper
+    </h1>
+    <p class="mt-3 text-lg text-slate-300 max-w-xl mx-auto">
+      Find upcoming marathon events near <span class="text-purple-300 font-semibold">Navi Mumbai</span>
+      and sync them to your Google Calendar in one click.
+    </p>
+  </header>
+
+  <!-- ===== CONTROLS ===== -->
+  <main class="max-w-3xl mx-auto px-4 pb-20">
+
+    <!-- Options Card -->
+    <div class="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-6 mb-8">
+      <div class="flex flex-wrap items-center gap-6 mb-6">
+        <!-- Fast mode toggle -->
+        <label class="flex items-center gap-2 cursor-pointer select-none">
+          <input id="opt-fast" type="checkbox" checked
+                 class="w-5 h-5 accent-purple-500 rounded" />
+          <span class="text-sm text-slate-200">Fast mode <span class="text-slate-400">(skip detail pages)</span></span>
+        </label>
+
+        <!-- Dry-run toggle -->
+        <label class="flex items-center gap-2 cursor-pointer select-none">
+          <input id="opt-dry" type="checkbox"
+                 class="w-5 h-5 accent-amber-500 rounded" />
+          <span class="text-sm text-slate-200">Dry run <span class="text-slate-400">(don't write to calendar)</span></span>
+        </label>
+      </div>
+
+      <!-- Calendar ID -->
+      <div class="mb-6">
+        <label for="opt-cal" class="block text-xs uppercase tracking-wider text-slate-400 mb-1">
+          Calendar ID <span class="text-slate-500">(optional)</span>
+        </label>
+        <input id="opt-cal" type="text" placeholder="primary"
+               class="w-full bg-white/10 border border-white/10 rounded-lg px-4 py-2 text-sm
+                      placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500/60" />
+      </div>
+
+      <!-- Sync Button -->
+      <button id="btn-sync"
+              class="w-full flex items-center justify-center gap-3 bg-purple-600 hover:bg-purple-500
+                     active:bg-purple-700 transition-colors rounded-xl px-6 py-3.5 text-lg font-semibold
+                     disabled:opacity-50 disabled:cursor-not-allowed">
+        <span id="btn-text">🔄 Sync Marathons</span>
+        <span id="btn-spinner" class="spinner hidden"></span>
+      </button>
+    </div>
+
+    <!-- Status message -->
+    <p id="status-msg" class="text-center text-slate-400 text-sm mb-6 hidden"></p>
+
+    <!-- Error banner -->
+    <div id="error-banner"
+         class="hidden bg-red-500/20 border border-red-400/30 text-red-200 rounded-xl p-4 mb-6 text-sm"></div>
+
+    <!-- ===== RESULTS ===== -->
+    <section id="results" class="hidden fade-in">
+
+      <!-- Summary Cards -->
+      <div id="summary-cards" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8"></div>
+
+      <!-- Events Table -->
+      <div class="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden">
+        <div class="px-5 py-4 border-b border-white/10">
+          <h2 class="text-lg font-semibold">Events</h2>
+        </div>
+        <div class="divide-y divide-white/5" id="event-list"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ===== FOOTER ===== -->
+  <footer class="text-center text-xs text-slate-500 pb-8">
+    Powered by <a href="https://indiarunning.com" target="_blank" class="underline hover:text-slate-300">IndiaRunning.com</a>
+    &bull; Built with FastAPI &amp; Playwright
+  </footer>
+
+  <script>
+    // ─── Config ─────────────────────────────────────────────────────
+    const API_BASE = window.location.origin; // same origin (served by FastAPI)
+
+    // ─── DOM refs ───────────────────────────────────────────────────
+    const btnSync     = document.getElementById("btn-sync");
+    const btnText     = document.getElementById("btn-text");
+    const btnSpinner  = document.getElementById("btn-spinner");
+    const statusMsg   = document.getElementById("status-msg");
+    const errorBanner = document.getElementById("error-banner");
+    const resultsEl   = document.getElementById("results");
+    const summaryEl   = document.getElementById("summary-cards");
+    const eventListEl = document.getElementById("event-list");
+
+    const optFast = document.getElementById("opt-fast");
+    const optDry  = document.getElementById("opt-dry");
+    const optCal  = document.getElementById("opt-cal");
+
+    // ─── Helpers ────────────────────────────────────────────────────
+    const statusColors = {
+      created:   { bg: "bg-emerald-500/20", text: "text-emerald-300", label: "Created" },
+      duplicate: { bg: "bg-amber-500/20",   text: "text-amber-300",   label: "Duplicate" },
+      skipped:   { bg: "bg-slate-500/20",   text: "text-slate-300",   label: "Skipped" },
+      error:     { bg: "bg-red-500/20",     text: "text-red-300",     label: "Error" },
+    };
+
+    function badge(status) {
+      const c = statusColors[status] || statusColors.skipped;
+      return `<span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${c.bg} ${c.text}">${c.label}</span>`;
+    }
+
+    function statCard(label, value, color) {
+      return `
+        <div class="bg-white/5 border border-white/10 rounded-xl p-4 text-center">
+          <p class="text-2xl font-bold ${color}">${value}</p>
+          <p class="text-xs uppercase tracking-wider text-slate-400 mt-1">${label}</p>
+        </div>`;
+    }
+
+    function formatDate(raw) {
+      if (!raw) return "—";
+      try {
+        const d = new Date(raw);
+        return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+      } catch { return raw; }
+    }
+
+    // ─── Main fetch ─────────────────────────────────────────────────
+    btnSync.addEventListener("click", async () => {
+      // Reset UI
+      errorBanner.classList.add("hidden");
+      resultsEl.classList.add("hidden");
+      statusMsg.classList.remove("hidden");
+      statusMsg.textContent = "⏳ Scraping events… this can take 30-90 seconds…";
+
+      // Button loading state
+      btnSync.disabled = true;
+      btnText.textContent = "Syncing…";
+      btnSpinner.classList.remove("hidden");
+
+      try {
+        // Build query string
+        const params = new URLSearchParams();
+        if (optFast.checked) params.set("fast", "true");
+        if (optDry.checked)  params.set("dry_run", "true");
+        const calId = optCal.value.trim();
+        if (calId) params.set("calendar_id", calId);
+
+        const url = `${API_BASE}/sync-marathons?${params}`;
+        const res = await fetch(url, { method: "POST" });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ detail: res.statusText }));
+          throw new Error(err.detail || JSON.stringify(err));
+        }
+
+        const data = await res.json();
+        renderResults(data);
+
+      } catch (err) {
+        errorBanner.textContent = `❌ ${err.message}`;
+        errorBanner.classList.remove("hidden");
+      } finally {
+        // Reset button
+        btnSync.disabled = false;
+        btnText.textContent = "🔄 Sync Marathons";
+        btnSpinner.classList.add("hidden");
+        statusMsg.classList.add("hidden");
+      }
+    });
+
+    // ─── Render ─────────────────────────────────────────────────────
+    function renderResults(data) {
+      // Summary cards
+      summaryEl.innerHTML = [
+        statCard("Scraped",    data.total_scraped,  "text-blue-300"),
+        statCard("Added",      data.added,          "text-emerald-300"),
+        statCard("Duplicates", data.duplicates,     "text-amber-300"),
+        statCard("Errors",     data.errors,         "text-red-300"),
+      ].join("");
+
+      // Duration banner
+      statusMsg.classList.remove("hidden");
+      statusMsg.textContent = `✅ Done in ${data.duration_seconds.toFixed(1)}s — ${data.message}`;
+
+      // Event list
+      if (!data.events || data.events.length === 0) {
+        eventListEl.innerHTML = `
+          <div class="px-5 py-8 text-center text-slate-400">
+            No upcoming events found.
+          </div>`;
+      } else {
+        eventListEl.innerHTML = data.events.map(ev => `
+          <div class="px-5 py-4 flex flex-col md:flex-row md:items-center gap-3 hover:bg-white/5 transition-colors">
+            <div class="flex-1 min-w-0">
+              <p class="font-semibold text-sm truncate">${ev.event_name}</p>
+              <p class="text-xs text-slate-400 mt-0.5">
+                📅 ${formatDate(ev.date)}
+                ${ev.start_time ? " &bull; ⏰ " + ev.start_time : ""}
+                ${ev.location   ? " &bull; 📍 " + ev.location   : ""}
+              </p>
+            </div>
+            <div class="flex items-center gap-3 shrink-0">
+              ${badge(ev.status)}
+              ${ev.registration_link
+                  ? `<a href="${ev.registration_link}" target="_blank"
+                        class="text-xs text-purple-300 hover:text-purple-100 underline">Register ↗</a>`
+                  : ""}
+              ${ev.calendar_link
+                  ? `<a href="${ev.calendar_link}" target="_blank"
+                        class="text-xs text-emerald-300 hover:text-emerald-100 underline">Calendar ↗</a>`
+                  : ""}
+            </div>
+          </div>`).join("");
+      }
+
+      resultsEl.classList.remove("hidden");
+    }
+  </script>
+</body>
+</html>
