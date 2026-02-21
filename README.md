@@ -16,13 +16,15 @@ Automatically scrapes upcoming marathon & running events near **Navi Mumbai, Mah
 - **Google Calendar Integration** — OAuth 2.0 authentication with token caching
 - **Duplicate Detection** — Queries your calendar before adding; never creates duplicates
 - **Batch Processing** — Scrapes & adds all upcoming events in one run
+- **REST API** — FastAPI endpoint (`POST /sync-marathons`) with interactive Swagger docs
 - **CLI Flags** — `--dry-run`, `--fast`, `--headed` for flexible usage
 
 ## 📁 Project Structure
 
 ```
 AI WebScraper/
-├── main.py                    # Main pipeline: scrape → deduplicate → add → summary
+├── app.py                     # FastAPI REST API server
+├── main.py                    # CLI pipeline: scrape → deduplicate → add → summary
 ├── marathon_scraper.py        # Playwright scraper for IndiaRunning.com
 ├── calendar_integration.py    # Google Calendar API v3 authentication & event creation
 ├── GOOGLE_CALENDAR_SETUP.md   # Step-by-step guide to get credentials.json
@@ -147,6 +149,72 @@ python calendar_integration.py        # adds a sample event to verify setup
 | `--fast` | Skip detail-page visits (faster, but no start-time data) |
 | `--headed` | Show the browser window while scraping |
 | `--calendar-id ID` | Target a specific Google Calendar (default: `primary`) |
+
+## 🌐 REST API (FastAPI)
+
+### Start the server
+
+```bash
+uvicorn app:app --reload --port 8000
+```
+
+Once running, open **http://localhost:8000/docs** for the interactive Swagger UI.
+
+### Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/` | Health check |
+| `POST` | `/sync-marathons` | Scrape events + sync to Google Calendar |
+
+### Query parameters for `/sync-marathons`
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `fast` | bool | `false` | Skip detail-page visits |
+| `dry_run` | bool | `false` | Scrape only — don't touch calendar |
+| `calendar_id` | string | `primary` | Target calendar ID |
+
+### Example requests
+
+```bash
+# Full sync
+curl -X POST http://localhost:8000/sync-marathons
+
+# Dry run (scrape only)
+curl -X POST "http://localhost:8000/sync-marathons?dry_run=true"
+
+# Fast + dry run
+curl -X POST "http://localhost:8000/sync-marathons?fast=true&dry_run=true"
+```
+
+### Example response
+
+```json
+{
+  "success": true,
+  "message": "Sync complete: 5 added, 12 duplicates, 0 skipped, 0 errors.",
+  "duration_seconds": 92.4,
+  "total_scraped": 17,
+  "total_upcoming": 17,
+  "added": 5,
+  "duplicates": 12,
+  "skipped": 0,
+  "errors": 0,
+  "events": [
+    {
+      "event_name": "Kharghar Half Marathon - Run for Education",
+      "date": "2026-04-05",
+      "start_time": "5:30 AM",
+      "location": "Navi Mumbai",
+      "registration_link": "https://registrations.indiarunning.com/...",
+      "status": "created",
+      "calendar_link": "https://www.google.com/calendar/event?eid=...",
+      "reason": null
+    }
+  ]
+}
+```
 
 ## 🔒 Security
 
