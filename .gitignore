@@ -1,0 +1,13 @@
+# Secrets – never commit these
+credentials.json
+token.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# IDE
+.vscode/
+.idea/
